@@ -6,6 +6,6 @@ COPY requirements.txt ./
 RUN pip install -r requirements.txt
 
 COPY . .
-EXPOSE 8000
+EXPOSE 8080
 
-CMD  ["python", "./main.py", "--host", "0.0.0.0","--port", "8000", "--reload","true"]
+CMD  ["python", "./main.py", "--host", "0.0.0.0","--port", "8080", "--reload","true"]
