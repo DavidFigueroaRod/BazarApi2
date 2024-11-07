@@ -101,6 +101,22 @@ def get_item(item_id: int):
         raise HTTPException(status_code=404, detail="Item not found")
     return item
 
+# Endpoint para registrar una venta
+@app.post("/api/addSale")
+def add_sale(sale: SaleInput):
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("INSERT INTO ventas (producto_id, precio, fecha_venta) VALUES (%s, %s, %s)",
+                       (sale.product_id, sale.price, sale.sale_date))
+        conn.commit()
+        result = True
+    except:
+        conn.rollback()
+        result = False
+    finally:
+        conn.close()
+    return {"success": result}
 
 # Endpoint para obtener todas las ventas con detalles del producto
 @app.get("/api/sales", response_model=List[SaleWithProduct])
