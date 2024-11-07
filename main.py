@@ -41,6 +41,13 @@ class Product(BaseModel):
     thumbnail: str
     images: str  # Cambiar el nombre aquí
 
+class SaleWithProduct(BaseModel):
+    id: int
+    product_id: int
+    price: float
+    sale_date: date
+    product: Product
+
 # Modelo para agregar una venta
 class SaleInput(BaseModel):
     product_id: int
@@ -74,8 +81,8 @@ def get_products():
 def get_items(q: Optional[str] = Query(None)):
     conn = mysql.connector.connect(**db_config)
     cursor = conn.cursor(dictionary=True)
-    query = "SELECT * FROM productos WHERE title LIKE %s OR description LIKE %s"
-    cursor.execute(query, (f"%{q}%", f"%{q}%"))
+    query = "SELECT * FROM productos WHERE title LIKE %s OR description LIKE %s OR category LIKE %s"
+    cursor.execute(query, (f"%{q}%", f"%{q}%", f"%{q}%"))
     items = cursor.fetchall()
     conn.close()
     if not items:
@@ -94,22 +101,63 @@ def get_item(item_id: int):
         raise HTTPException(status_code=404, detail="Item not found")
     return item
 
-# Endpoint para registrar una venta
-@app.post("/api/addSale")
-def add_sale(sale: SaleInput):
-    conn = mysql.connector.connect(**db_config)
-    cursor = conn.cursor()
+
+# Endpoint para obtener todas las ventas con detalles del producto
+@app.get("/api/sales", response_model=List[SaleWithProduct])
+def get_sales():
     try:
-        cursor.execute("INSERT INTO ventas (producto_id, precio, fecha_venta) VALUES (%s, %s, %s)",
-                       (sale.product_id, sale.price, sale.sale_date))
-        conn.commit()
-        result = True
-    except:
-        conn.rollback()
-        result = False
-    finally:
-        conn.close()
-    return {"success": result}
+        # Conectar a la base de datos
+        connection = mysql.connector.connect(**db_config)
+        cursor = connection.cursor(dictionary=True)
+
+        # Consulta SQL que incluye los datos del producto usando JOIN
+        query = """
+        SELECT ventas.id, ventas.producto_id, ventas.precio, ventas.fecha_venta,
+               productos.id AS product_id, productos.title, productos.description, 
+               productos.price AS product_price, productos.discountPercentage, productos.rating,
+               productos.stock, productos.brand, productos.category, productos.thumbnail, productos.images
+        FROM ventas
+        JOIN productos ON ventas.producto_id = productos.id
+        """
+
+        cursor.execute(query)
+        sales = cursor.fetchall()
+
+        # Cerrar la conexión
+        cursor.close()
+        connection.close()
+
+        # Transformar los resultados para ajustarse al modelo de respuesta
+        sales_with_product = [
+            {
+                "id": sale["id"],
+                "product_id": sale["producto_id"],
+                "price": sale["precio"],
+                "sale_date": sale["fecha_venta"],
+                "product": {
+                    "id": sale["product_id"],
+                    "title": sale["title"],
+                    "description": sale["description"],
+                    "price": sale["product_price"],
+                    "discountPercentage": sale["discountPercentage"],
+                    "rating": sale["rating"],
+                    "stock": sale["stock"],
+                    "brand": sale["brand"],
+                    "category": sale["category"],
+                    "thumbnail": sale["thumbnail"],
+                    "images": sale["images"]
+                }
+            } for sale in sales
+        ]
+
+        if not sales_with_product:
+            raise HTTPException(status_code=404, detail="No sales found")
+
+        return sales_with_product
+
+    except Error as e:
+        raise HTTPException(status_code=500, detail=f"Error al consultar la base de datos: {e}")
+
 
 # Endpoint para obtener todas las ventas
 @app.get("/api/sales")
