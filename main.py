@@ -5,7 +5,8 @@ from typing import List, Optional
 import mysql.connector
 from mysql.connector import Error
 import uvicorn
-from datetime import date
+from datetime import datetime
+# from datetime import date
 
 app = FastAPI()
 
@@ -27,61 +28,71 @@ db_config = {
 }
 
 # Modelo para representar un producto
-# Modelo para representar un producto
 class Product(BaseModel):
     id: int
     title: str
     description: str
     price: float
-    discountPercentage: float  # Cambiar el nombre aquí
+    discountPercentage: float
     rating: float
     stock: int
     brand: str
     category: str
     thumbnail: str
-    images: str  # Cambiar el nombre aquí
+    images: str
+    tags: Optional[str] = None
+    sku: Optional[str] = None
+    weight: Optional[int] = None
+    dimensions_width: Optional[float] = None
+    dimensions_height: Optional[float] = None
+    dimensions_depth: Optional[float] = None
+    warrantyInformation: Optional[str] = None
+    shippingInformation: Optional[str] = None
+    availabilityStatus: Optional[str] = None
+    returnPolicy: Optional[str] = None
+    minimumOrderQuantity: Optional[int] = None
+    createdAt: Optional[datetime] = None
+    updatedAt: Optional[datetime] = None
+    barcode: Optional[str] = None
+    qrCode: Optional[str] = None
 
+# Modelo para representar una venta con detalles del producto
 class SaleWithProduct(BaseModel):
     id: int
     product_id: int
     price: float
-    sale_date: date
+    sale_date: datetime  # Cambiado a datetime para incluir la hora si es necesario
     product: Product
 
 # Modelo para agregar una venta
 class SaleInput(BaseModel):
     product_id: int
     price: float
-    sale_date: date
+    sale_date: datetime
 
 # Endpoint para obtener todos los productos
 @app.get("/products/", response_model=List[Product])
 def get_products():
     try:
-        # Conectar a la base de datos
         connection = mysql.connector.connect(**db_config)
         cursor = connection.cursor(dictionary=True)
-
-        # Ejecutar la consulta SQL
-        cursor.execute("SELECT * FROM productos")
+        cursor.execute("SELECT * FROM productos_completos")
         products = cursor.fetchall()
-
-        # Cerrar la conexión
         cursor.close()
         connection.close()
-
         return products
-
     except Error as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar la base de datos: {e}")
-
 
 # Endpoint para buscar productos
 @app.get("/api/items", response_model=List[Product])
 def get_items(q: Optional[str] = Query(None)):
     conn = mysql.connector.connect(**db_config)
     cursor = conn.cursor(dictionary=True)
-    query = "SELECT * FROM productos WHERE title LIKE %s OR description LIKE %s OR category LIKE %s"
+    query = """
+        SELECT * FROM productos_completos 
+        WHERE title LIKE %s OR description LIKE %s OR category LIKE %s
+    """
     cursor.execute(query, (f"%{q}%", f"%{q}%", f"%{q}%"))
     items = cursor.fetchall()
     conn.close()
@@ -94,7 +105,7 @@ def get_items(q: Optional[str] = Query(None)):
 def get_item(item_id: int):
     conn = mysql.connector.connect(**db_config)
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM productos WHERE id = %s", (item_id,))
+    cursor.execute("SELECT * FROM productos_completos WHERE id = %s", (item_id,))
     item = cursor.fetchone()
     conn.close()
     if not item:
@@ -102,21 +113,35 @@ def get_item(item_id: int):
     return item
 
 # Endpoint para registrar una venta
+from datetime import datetime
+
+from datetime import datetime
+from fastapi import HTTPException
+
+
+from fastapi import HTTPException
+
 @app.post("/api/addSale")
 def add_sale(sale: SaleInput):
     conn = mysql.connector.connect(**db_config)
     cursor = conn.cursor()
     try:
+        # Usa sale.sale_date directamente, sin conversión adicional
         cursor.execute("INSERT INTO ventas (producto_id, precio, fecha_venta) VALUES (%s, %s, %s)",
                        (sale.product_id, sale.price, sale.sale_date))
         conn.commit()
         result = True
-    except:
+    except mysql.connector.Error as e:
         conn.rollback()
+        print(f"Error al insertar en la base de datos: {e}")
         result = False
+        raise HTTPException(status_code=500, detail=f"Error en la base de datos: {e}")
     finally:
+        cursor.close()
         conn.close()
     return {"success": result}
+
+
 
 # Endpoint para obtener todas las ventas con detalles del producto
 @app.get("/api/sales", response_model=List[SaleWithProduct])
@@ -129,11 +154,11 @@ def get_sales():
         # Consulta SQL que incluye los datos del producto usando JOIN
         query = """
         SELECT ventas.id, ventas.producto_id, ventas.precio, ventas.fecha_venta,
-               productos.id AS product_id, productos.title, productos.description, 
-               productos.price AS product_price, productos.discountPercentage, productos.rating,
-               productos.stock, productos.brand, productos.category, productos.thumbnail, productos.images
+               productos_completos.id AS product_id, productos_completos.title, productos_completos.description, 
+               productos_completos.price AS product_price, productos_completos.discountPercentage, productos_completos.rating,
+               productos_completos.stock, productos_completos.brand, productos_completos.category, productos_completos.thumbnail, productos_completos.images
         FROM ventas
-        JOIN productos ON ventas.producto_id = productos.id
+        JOIN productos_completos ON ventas.producto_id = productos_completos.id
         """
 
         cursor.execute(query)
@@ -175,18 +200,6 @@ def get_sales():
         raise HTTPException(status_code=500, detail=f"Error al consultar la base de datos: {e}")
 
 
-# Endpoint para obtener todas las ventas
-@app.get("/api/sales")
-def get_sales():
-    conn = mysql.connector.connect(**db_config)
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM ventas")
-    sales = cursor.fetchall()
-    conn.close()
-    if not sales:
-        raise HTTPException(status_code=404, detail="No sales found")
-
-    return {"sales": sales}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8080)
